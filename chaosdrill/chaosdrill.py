@@ -1,3 +1,4 @@
+import os
 import sys
 import time
 import json
@@ -14,7 +15,7 @@ import jira_client as jira
 
 PROMETHEUS_URL = "http://localhost:30090"
 ORDER_SERVICE_URL = "http://localhost:30002/api/orders"
-STATE_FILE = Path(__file__).parent / "state.json"
+STATE_FILE = Path(os.environ.get("CHAOSDRILL_STATE_FILE", Path(__file__).parent / "state.json"))
 
 
 def load_state():
