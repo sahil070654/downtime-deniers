@@ -17,7 +17,6 @@ pipeline {
     environment {
         AWS_REGION   = 'ap-south-1'
         ECR_REGISTRY = "${env.AWS_ACCOUNT_ID}.dkr.ecr.ap-south-1.amazonaws.com"
-        SERVICES     = 'dd-user-service dd-order-service dd-payment-service dd-frontend'
     }
 
     options {
@@ -105,6 +104,28 @@ pipeline {
                         done
 
                         kubectl get pods -n default
+                    '''
+                }
+            }
+        }
+
+        stage('Chaos verify') {
+            when { expression { return params.SKIP_CHAOS == false } }
+            steps {
+                withCredentials([
+                    string(credentialsId: 'jira-email',     variable: 'JIRA_EMAIL'),
+                    string(credentialsId: 'jira-api-token', variable: 'JIRA_API_TOKEN')
+                ]) {
+                    sh '''
+                        set -e
+                        cd chaosdrill
+
+                        export JIRA_URL=https://mssb0607.atlassian.net
+                        export JIRA_PROJECT_KEY=DD
+                        export CHAOSDRILL_STATE_FILE=/var/lib/jenkins/chaosdrill-state/state.json
+
+                        echo "Running chaos experiment: ${CHAOS_EXPERIMENT}"
+                        /var/lib/jenkins/chaosdrill-venv/bin/python chaosdrill.py "${CHAOS_EXPERIMENT}"
                     '''
                 }
             }
