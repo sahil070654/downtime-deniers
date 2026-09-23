@@ -30,19 +30,34 @@ def load_state():
 def save_state(state):
     STATE_FILE.write_text(json.dumps(state, indent=2))
 
+def resolve_chaos_file(yaml_file):
+    """Find a chaos YAML in several likely locations."""
+    candidates = [
+        Path(yaml_file),
+        Path(__file__).parent / yaml_file,
+        Path(__file__).parent.parent / "chaos" / yaml_file,
+    ]
+    for c in candidates:
+        if c.exists():
+            return str(c)
+    raise FileNotFoundError(
+        f"Chaos YAML not found: {yaml_file}. Tried: {[str(c) for c in candidates]}"
+    )
+
 
 def apply_experiment(yaml_file):
+    yaml_path = resolve_chaos_file(yaml_file)
+    print(f"[ChaosDrill] Resolved chaos file: {yaml_path}")
     print("[ChaosDrill] Deleting any existing experiment first...")
-    subprocess.run(["kubectl", "delete", "-f", yaml_file, "--ignore-not-found"],
+    subprocess.run(["kubectl", "delete", "-f", yaml_path, "--ignore-not-found"],
                    capture_output=True, text=True)
     time.sleep(2)
-    print(f"[ChaosDrill] Applying experiment: {yaml_file}")
-    result = subprocess.run(["kubectl", "apply", "-f", yaml_file],
+    print(f"[ChaosDrill] Applying experiment: {yaml_path}")
+    result = subprocess.run(["kubectl", "apply", "-f", yaml_path],
                             capture_output=True, text=True)
     print(result.stdout)
     if result.returncode != 0:
         raise RuntimeError(f"Failed to apply experiment: {result.stderr}")
-
 
 def generate_traffic(stop_event, interval=1, concurrency=4):
     def send_one():
