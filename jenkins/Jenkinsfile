@@ -1,0 +1,119 @@
+pipeline {
+    agent any
+
+    parameters {
+        booleanParam(
+            name: 'SKIP_CHAOS',
+            defaultValue: true,
+            description: 'Skip chaos verification (set false to run full closed loop)'
+        )
+        choice(
+            name: 'CHAOS_EXPERIMENT',
+            choices: ['payment-latency', 'payment-severe-latency', 'kill-payment-pod', 'payment-cpu-stress'],
+            description: 'Chaos experiment to verify (only used if SKIP_CHAOS=false)'
+        )
+    }
+
+    environment {
+        AWS_REGION   = 'ap-south-1'
+        ECR_REGISTRY = "${env.AWS_ACCOUNT_ID}.dkr.ecr.ap-south-1.amazonaws.com"
+        SERVICES     = 'dd-user-service dd-order-service dd-payment-service dd-frontend'
+    }
+
+    options {
+        timestamps()
+        ansiColor('xterm')
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                git branch: 'main',
+                    url: 'https://github.com/sahil070654/downtime-deniers.git',
+                    credentialsId: 'github-pat'
+            }
+        }
+
+        stage('Pre-flight') {
+            steps {
+                sh '''
+                    echo "== docker =="
+                    docker --version
+                    echo "== kubectl =="
+                    kubectl version --client
+                    echo "== aws identity =="
+                    aws sts get-caller-identity
+                '''
+            }
+        }
+
+        stage('Build images') {
+            steps {
+                sh '''
+                    set -e
+                    docker build -t dd-user-service:${BUILD_NUMBER}    services/user-service/
+                    docker build -t dd-order-service:${BUILD_NUMBER}   services/order-service/
+                    docker build -t dd-payment-service:${BUILD_NUMBER} services/payment-service/
+                    docker build -t dd-frontend:${BUILD_NUMBER}        frontend/
+                '''
+            }
+        }
+
+        stage('Push to ECR') {
+            steps {
+                withCredentials([string(credentialsId: 'aws-account-id', variable: 'AWS_ACCOUNT_ID')]) {
+                    sh '''
+                        set -e
+                        REGISTRY=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+
+                        aws ecr get-login-password --region $AWS_REGION | \
+                            docker login --username AWS --password-stdin $REGISTRY
+
+                        for svc in dd-user-service dd-order-service dd-payment-service dd-frontend; do
+                            docker tag $svc:${BUILD_NUMBER} $REGISTRY/$svc:${BUILD_NUMBER}
+                            docker tag $svc:${BUILD_NUMBER} $REGISTRY/$svc:latest
+                            docker push $REGISTRY/$svc:${BUILD_NUMBER}
+                            docker push $REGISTRY/$svc:latest
+                        done
+                    '''
+                }
+            }
+        }
+
+        stage('Deploy to K8s') {
+            steps {
+                withCredentials([string(credentialsId: 'aws-account-id', variable: 'AWS_ACCOUNT_ID')]) {
+                    sh '''
+                        set -e
+                        REGISTRY=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+
+                        kubectl delete secret ecr-secret -n default --ignore-not-found
+                        kubectl create secret docker-registry ecr-secret \
+                            --docker-server=$REGISTRY \
+                            --docker-username=AWS \
+                            --docker-password=$(aws ecr get-login-password --region $AWS_REGION) \
+                            -n default
+
+                        kubectl set image deployment/user-service    user-service=$REGISTRY/dd-user-service:${BUILD_NUMBER}       -n default
+                        kubectl set image deployment/order-service   order-service=$REGISTRY/dd-order-service:${BUILD_NUMBER}     -n default
+                        kubectl set image deployment/payment-service payment-service=$REGISTRY/dd-payment-service:${BUILD_NUMBER} -n default
+                        kubectl set image deployment/frontend        frontend=$REGISTRY/dd-frontend:${BUILD_NUMBER}               -n default
+
+                        for svc in user-service order-service payment-service frontend; do
+                            kubectl rollout status deployment/$svc -n default --timeout=180s
+                        done
+
+                        kubectl get pods -n default
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        success { echo "Pipeline succeeded for build ${BUILD_NUMBER}." }
+        failure { echo "Pipeline failed. Check the stage log." }
+        always  { echo "Build ${BUILD_NUMBER} finished." }
+    }
+}
