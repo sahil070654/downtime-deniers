@@ -1,0 +1,75 @@
+version: "3.9"
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: dd-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass123
+      MYSQL_DATABASE: downtime_deniers
+      MYSQL_USER: app_user
+      MYSQL_PASSWORD: devpass123
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpass123"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  user-service:
+    build: ./services/user-service
+    container_name: dd-user-service
+    restart: unless-stopped
+    environment:
+      DB_USER: app_user
+      DB_PASS: devpass123
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: downtime_deniers
+    ports:
+      - "5001:5001"
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  payment-service:
+    build: ./services/payment-service
+    container_name: dd-payment-service
+    restart: unless-stopped
+    environment:
+      DB_USER: app_user
+      DB_PASS: devpass123
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: downtime_deniers
+    ports:
+      - "8083:8083"
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  order-service:
+    build: ./services/order-service
+    container_name: dd-order-service
+    restart: unless-stopped
+    environment:
+      DB_USER: app_user
+      DB_PASS: devpass123
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: downtime_deniers
+      PAYMENT_SERVICE_URL: http://payment-service:8083
+    ports:
+      - "8082:8082"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      payment-service:
+        condition: service_started
+
+volumes:
+  mysql_data:

@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: payment-service
+  template:
+    metadata:
+      labels:
+        app: payment-service
+    spec:
+      imagePullSecrets:
+        - name: ecr-secret
+      containers:
+        - name: payment-service
+          image: 302263069787.dkr.ecr.ap-south-1.amazonaws.com/dd-payment-service:latest
+          ports:
+            - containerPort: 8083
+          env:
+            - name: DB_USER
+              value: app_user
+            - name: DB_PASS
+              value: devpass123
+            - name: DB_HOST
+              value: mysql
+            - name: DB_PORT
+              value: "3306"
+            - name: DB_NAME
+              value: downtime_deniers
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8083
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "300m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-service
+  labels:
+    app: payment-service
+spec:
+  selector:
+    app: payment-service
+  ports:
+    - port: 8083
+      targetPort: 8083

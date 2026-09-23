@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: order-service
+  template:
+    metadata:
+      labels:
+        app: order-service
+    spec:
+      imagePullSecrets:
+        - name: ecr-secret
+      containers:
+        - name: order-service
+          image: 302263069787.dkr.ecr.ap-south-1.amazonaws.com/dd-order-service:latest
+          ports:
+            - containerPort: 8082
+          env:
+            - name: DB_USER
+              value: app_user
+            - name: DB_PASS
+              value: devpass123
+            - name: DB_HOST
+              value: mysql
+            - name: DB_PORT
+              value: "3306"
+            - name: DB_NAME
+              value: downtime_deniers
+            - name: PAYMENT_SERVICE_URL
+              value: http://payment-service:8083
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8082
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "300m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-service
+  labels:
+    app: order-service
+spec:
+  type: NodePort
+  selector:
+    app: order-service
+  ports:
+    - port: 8082
+      targetPort: 8082
+      nodePort: 30002

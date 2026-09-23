@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# Secrets & state — NEVER commit
+.env
+*.pem
+*.key
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# ChaosDrill artifacts
+chaosdrill/state.json
+chaosdrill/report_*.json
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,94 @@
+---
+- name: Setup Docker, k3d, kubectl, Helm on EC2
+  hosts: dd_server
+  become: yes
+
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install prerequisite packages
+      apt:
+        name:
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+        state: present
+
+    - name: Add Docker GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+
+    - name: Install Docker
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+        update_cache: yes
+        state: present
+
+    - name: Add ubuntu user to docker group
+      user:
+        name: ubuntu
+        groups: docker
+        append: yes
+
+    - name: Enable swap (helps under memory pressure for k3d + observability stack)
+      shell: |
+        fallocate -l 2G /swapfile
+        chmod 600 /swapfile
+        mkswap /swapfile
+        swapon /swapfile
+        echo '/swapfile none swap sw 0 0' >> /etc/fstab
+      args:
+        creates: /swapfile
+
+    - name: Install kubectl
+      shell: |
+        curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+        install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+      args:
+        creates: /usr/local/bin/kubectl
+
+    - name: Install Helm
+      shell: |
+        curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+      args:
+        creates: /usr/local/bin/helm
+
+    - name: Install k3d
+      shell: |
+        curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
+      args:
+        creates: /usr/local/bin/k3d
+
+    - name: Create k3d cluster with exposed ports
+      shell: |
+        k3d cluster create dd-cluster \
+          --api-port 6550 \
+          -p "80:80@loadbalancer" \
+          -p "30000-30100:30000-30100@loadbalancer" \
+          --agents 1
+      environment:
+        PATH: "/usr/local/bin:{{ ansible_env.PATH }}"
+      register: k3d_result
+      failed_when: k3d_result.rc != 0 and 'already exists' not in k3d_result.stderr
+
+    - name: Verify cluster is up
+      shell: kubectl get nodes
+      environment:
+        KUBECONFIG: /root/.kube/config
+      register: node_check
+
+    - name: Show cluster nodes
+      debug:
+        var: node_check.stdout_lines

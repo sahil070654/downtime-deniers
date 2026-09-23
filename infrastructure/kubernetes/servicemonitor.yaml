@@ -1,0 +1,20 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: dd-services
+  namespace: monitoring
+  labels:
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+      - default
+  selector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: ["user-service", "order-service", "payment-service"]
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 10s

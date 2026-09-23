@@ -1,0 +1,8 @@
+flask
+flask-cors
+pymysql
+sqlalchemy
+cryptography
+python-dotenv
+requests
+prometheus-client
