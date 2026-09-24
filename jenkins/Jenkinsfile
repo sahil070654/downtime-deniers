@@ -47,6 +47,27 @@ pipeline {
             }
         }
 
+        stage('Test + Coverage') {
+            steps {
+                sh '''
+                    set -e
+                    rm -rf .venv-tests
+                    python3 -m venv .venv-tests
+                    . .venv-tests/bin/activate
+                    pip install --quiet --upgrade pip
+                    pip install --quiet -r tests/requirements.txt
+                    UNIT_TEST_MODE=1 pytest tests/unit \
+                        --cov=services/order-service \
+                        --cov=services/payment-service \
+                        --cov=services/user-service \
+                        --cov=chaosdrill \
+                        --cov-report=term-missing \
+                        --cov-report=xml:coverage.xml \
+                        --cov-fail-under=60
+                '''
+            }
+        }
+
         stage('Build images') {
             steps {
                 sh '''
