@@ -27,4 +27,6 @@ class Payment(Base):
     status = Column(String(20), nullable=False, default="SUCCESS")
 
 def init_db():
+    if os.getenv("UNIT_TEST_MODE") == "1":
+        return
     Base.metadata.create_all(bind=engine)

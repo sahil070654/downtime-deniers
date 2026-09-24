@@ -1,0 +1,12 @@
+pytest
+pytest-cov
+requests
+requests-mock
+flask
+flask-cors
+prometheus-client
+sqlalchemy
+pymysql
+python-dotenv
+prometheus-api-client
+kubernetes

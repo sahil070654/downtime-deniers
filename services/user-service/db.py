@@ -27,4 +27,6 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
 
 def init_db():
+    if os.getenv("UNIT_TEST_MODE") == "1":
+        return
     Base.metadata.create_all(bind=engine)
