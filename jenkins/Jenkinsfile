@@ -12,6 +12,11 @@ pipeline {
             choices: ['payment-latency', 'payment-severe-latency', 'kill-payment-pod', 'payment-cpu-stress'],
             description: 'Chaos experiment to verify (only used if SKIP_CHAOS=false)'
         )
+        booleanParam(
+            name: 'SKIP_INTEGRATION',
+            defaultValue: false,
+            description: 'Skip integration tests (requires a live target)'
+        )
     }
 
     environment {
@@ -51,6 +56,7 @@ pipeline {
             steps {
                 sh '''
                     set -e
+                    mkdir -p reports
                     rm -rf .venv-tests
                     python3 -m venv .venv-tests
                     . .venv-tests/bin/activate
@@ -63,7 +69,8 @@ pipeline {
                         --cov=chaosdrill \
                         --cov-report=term-missing \
                         --cov-report=xml:coverage.xml \
-                        --cov-fail-under=80
+                        --junitxml=reports/unit.xml \
+                        --cov-fail-under=85
                 '''
             }
         }
@@ -130,6 +137,23 @@ pipeline {
             }
         }
 
+        stage('Integration Tests') {
+            when { expression { return params.SKIP_INTEGRATION == false } }
+            steps {
+                sh '''
+                    set -e
+                    . .venv-tests/bin/activate
+                    export USER_SERVICE_URL=http://localhost:30001
+                    export ORDER_SERVICE_URL=http://localhost:30002
+                    export PAYMENT_SERVICE_URL=http://localhost:30003
+                    export FRONTEND_URL=http://localhost:30080
+                    sleep 10
+                    pytest tests/integration -v -m integration \
+                        --junitxml=reports/integration.xml
+                '''
+            }
+        }
+
         stage('Chaos verify') {
             when { expression { return params.SKIP_CHAOS == false } }
             steps {
@@ -154,8 +178,12 @@ pipeline {
     }
 
     post {
+        always {
+            junit allowEmptyResults: true, testResults: 'reports/*.xml'
+            recordCoverage tools: [[parser: 'COBERTURA', pattern: 'coverage.xml']]
+            echo "Build ${BUILD_NUMBER} finished."
+        }
         success { echo "Pipeline succeeded for build ${BUILD_NUMBER}." }
         failure { echo "Pipeline failed. Check the stage log." }
-        always  { echo "Build ${BUILD_NUMBER} finished." }
     }
 }
