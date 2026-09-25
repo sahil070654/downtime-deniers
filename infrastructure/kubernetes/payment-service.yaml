@@ -51,8 +51,11 @@ metadata:
   labels:
     app: payment-service
 spec:
+  type: NodePort
   selector:
     app: payment-service
   ports:
-    - port: 8083
+    - name: http
+      port: 8083
       targetPort: 8083
+      nodePort: 30003
