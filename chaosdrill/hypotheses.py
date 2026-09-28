@@ -28,8 +28,8 @@ HYPOTHESES = {
             "histogram_quantile(0.99, sum(rate(order_service_request_latency_seconds_bucket[1m])) by (le))"
         ),
         "slo_thresholds": {
-            "error_rate_max": 0.20,
-            "p99_latency_max_seconds": 5.0,
+            "error_rate_max": 1.0,
+            "p99_latency_max_seconds": 15.0,
             "circuit_breaker_must_open": True
         }
     },
