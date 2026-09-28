@@ -66,11 +66,15 @@ pipeline {
         stage('SonarCloud Analysis') {
             steps {
                 withSonarQubeEnv('SonarCloud') {
-                    sh '''
-                        set -e
-                        . .venv-tests/bin/activate
-                        /var/lib/jenkins/tools/hudson.plugins.sonar.SonarRunnerInstallation/sonar-scanner/bin/sonar-scanner
-                    '''
+                    script {
+                        def scannerHome = tool name: 'sonar-scanner', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
+                        sh """
+                            set -e
+                            . .venv-tests/bin/activate
+                            echo "Using sonar-scanner from: ${scannerHome}"
+                            ${scannerHome}/bin/sonar-scanner
+                        """
+                    }
                 }
             }
         }
