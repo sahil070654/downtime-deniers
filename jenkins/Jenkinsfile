@@ -2,21 +2,9 @@ pipeline {
     agent any
 
     parameters {
-        booleanParam(
-            name: 'SKIP_CHAOS',
-            defaultValue: true,
-            description: 'Skip chaos verification (set false to run full closed loop)'
-        )
-        choice(
-            name: 'CHAOS_EXPERIMENT',
-            choices: ['payment-latency', 'payment-severe-latency', 'kill-payment-pod', 'payment-cpu-stress'],
-            description: 'Chaos experiment to verify (only used if SKIP_CHAOS=false)'
-        )
-        booleanParam(
-            name: 'SKIP_INTEGRATION',
-            defaultValue: false,
-            description: 'Skip integration tests (requires a live target)'
-        )
+        booleanParam(name: 'SKIP_CHAOS', defaultValue: true, description: 'Skip chaos verification (set false to run full closed loop)')
+        choice(name: 'CHAOS_EXPERIMENT', choices: ['payment-latency', 'payment-severe-latency', 'kill-payment-pod', 'payment-cpu-stress'], description: 'Chaos experiment to verify (only used if SKIP_CHAOS=false)')
+        booleanParam(name: 'SKIP_INTEGRATION', defaultValue: false, description: 'Skip integration tests (requires a live target)')
     }
 
     environment {
@@ -75,6 +63,26 @@ pipeline {
             }
         }
 
+        stage('SonarCloud Analysis') {
+            steps {
+                withSonarQubeEnv('SonarCloud') {
+                    sh '''
+                        set -e
+                        . .venv-tests/bin/activate
+                        /var/lib/jenkins/tools/hudson.plugins.sonar.SonarRunnerInstallation/sonar-scanner/bin/sonar-scanner
+                    '''
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 1, unit: 'HOURS') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
         stage('Build images') {
             steps {
                 sh '''
@@ -93,10 +101,7 @@ pipeline {
                     sh '''
                         set -e
                         REGISTRY=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
-
-                        aws ecr get-login-password --region $AWS_REGION | \
-                            docker login --username AWS --password-stdin $REGISTRY
-
+                        aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $REGISTRY
                         for svc in dd-user-service dd-order-service dd-payment-service dd-frontend; do
                             docker tag $svc:${BUILD_NUMBER} $REGISTRY/$svc:${BUILD_NUMBER}
                             docker tag $svc:${BUILD_NUMBER} $REGISTRY/$svc:latest
@@ -114,23 +119,19 @@ pipeline {
                     sh '''
                         set -e
                         REGISTRY=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
-
                         kubectl delete secret ecr-secret -n default --ignore-not-found
                         kubectl create secret docker-registry ecr-secret \
                             --docker-server=$REGISTRY \
                             --docker-username=AWS \
                             --docker-password=$(aws ecr get-login-password --region $AWS_REGION) \
                             -n default
-
                         kubectl set image deployment/user-service    user-service=$REGISTRY/dd-user-service:${BUILD_NUMBER}       -n default
                         kubectl set image deployment/order-service   order-service=$REGISTRY/dd-order-service:${BUILD_NUMBER}     -n default
                         kubectl set image deployment/payment-service payment-service=$REGISTRY/dd-payment-service:${BUILD_NUMBER} -n default
                         kubectl set image deployment/frontend        frontend=$REGISTRY/dd-frontend:${BUILD_NUMBER}               -n default
-
                         for svc in user-service order-service payment-service frontend; do
                             kubectl rollout status deployment/$svc -n default --timeout=180s
                         done
-
                         kubectl get pods -n default
                     '''
                 }
@@ -164,11 +165,9 @@ pipeline {
                     sh '''
                         set -e
                         cd chaosdrill
-
                         export JIRA_URL=https://mssb0607.atlassian.net
                         export JIRA_PROJECT_KEY=DD
                         export CHAOSDRILL_STATE_FILE=/var/lib/jenkins/chaosdrill-state/state.json
-
                         echo "Running chaos experiment: ${CHAOS_EXPERIMENT}"
                         /var/lib/jenkins/chaosdrill-venv/bin/python chaosdrill.py "${CHAOS_EXPERIMENT}"
                     '''
